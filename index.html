@@ -1,129 +1,88 @@
 <!DOCTYPE html>
-<html lang="uz">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jarvis Neural Core</title>
-    <script src="config.js"></script> <style>
-        body { background: #000; margin: 0; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Courier New', monospace; color: #00d2ff; }
+    <script src="config.js"></script>
+    <style>
+        body { background: #000; margin: 0; overflow: hidden; font-family: monospace; color: #00d2ff; }
         canvas { position: absolute; top: 0; left: 0; }
-        .ui { position: absolute; width: 100%; height: 100%; pointer-events: none; padding: 15px; box-sizing: border-box; z-index: 5; font-size: 10px; }
-        .cmd-display { position: absolute; bottom: 80px; width: 100%; text-align: center; font-size: 14px; text-transform: uppercase; text-shadow: 0 0 10px #05ffa1; letter-spacing: 2px; z-index: 10; color: #05ffa1; min-height: 20px; }
-        #start-btn { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); background: none; border: 1px solid #00d2ff; color: #00d2ff; padding: 12px 25px; z-index: 15; cursor: pointer; border-radius: 5px; }
+        .ui { position: absolute; padding: 20px; z-index: 5; font-size: 10px; pointer-events: none; }
+        #cmd { position: absolute; bottom: 100px; width: 100%; text-align: center; color: #05ffa1; z-index: 10; font-size: 18px; text-shadow: 0 0 10px #05ffa1; }
+        #btn { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: none; border: 1px solid #00d2ff; color: #00d2ff; padding: 12px 25px; z-index: 15; cursor: pointer; }
     </style>
 </head>
 <body>
-
-    <div class="ui">
-        <div>[ JARVIS OS v12.5 ]<br>SYSTEM: <span id="status" style="color:#ff0000">OFFLINE</span></div>
-    </div>
-
-    <div id="cmd-display">TIZIMNI FAOLLASHTIRING</div>
-    <button id="start-btn">JARVISNI YOQISH</button>
-    <canvas id="jarvisCanvas"></canvas>
+    <div class="ui">[ JARVIS AI CORE ]<br>STATUS: <span id="st">READY</span></div>
+    <div id="cmd">TIZIMNI YOQING</div>
+    <button id="btn" onclick="init()">START SYSTEM</button>
+    <canvas id="canvas"></canvas>
 
     <script>
-        const canvas = document.getElementById('jarvisCanvas');
+        const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const cmdDisplay = document.getElementById('cmd-display');
-        const vStatus = document.getElementById('status');
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        let frame = 0, volume = 0, analyzer, micOn = false;
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-
-        let frame = 0, analyzer, dataArray, volume = 0, micStarted = false;
-
-        // --- AI BILAN BOG'LANISH (Gemini API) ---
-        async function askAI(question) {
-            cmdDisplay.innerText = "JARVIS O'YLAMOQDA...";
+        async function askAI(text) {
+            document.getElementById('cmd').innerText = "JARVIS O'YLAMOQDA...";
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.API_KEY}`, {
+                const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.API_KEY}`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: "Sen Jarvis ismli aqlli yordamchisan. Foydalanuvchi ismi Ser. Qisqa, aqlli va o'zbek tilida javob ber. Savol: " + question }] }]
-                    })
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({contents: [{parts: [{text: "Sen Jarvis yordamchisisan. Qisqa va aqlli javob ber: " + text}]}]})
                 });
-                const data = await response.json();
-                const answer = data.candidates[0].content.parts[0].text;
-                speak(answer);
-                cmdDisplay.innerText = "JARVIS: " + answer;
-            } catch (error) {
-                speak("Ser, ulanishda xatolik yuz berdi.");
-                cmdDisplay.innerText = "XATOLIK YUZ BERDI";
-            }
+                const d = await r.json();
+                const res = d.candidates[0].content.parts[0].text;
+                speak(res);
+                document.getElementById('cmd').innerText = res;
+            } catch(e) { document.getElementById('cmd').innerText = "API KEY XATO!"; }
         }
 
-        // --- OVOZLI BUYRUQLAR ---
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (SpeechRecognition) {
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'uz-UZ';
-            recognition.continuous = true;
+        const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const rec = new Speech();
+        rec.lang = 'uz-UZ'; rec.continuous = true;
+        rec.onresult = (e) => {
+            const m = e.results[e.results.length-1][0].transcript.toLowerCase();
+            document.getElementById('cmd').innerText = "SIZ: " + m;
+            if(m.includes("chiroqni yoq")) { JarvisOS.setFlash(true); speak("Xo'p bo'ladi"); }
+            else if(m.includes("chiroqni o'chir")) { JarvisOS.setFlash(false); speak("O'chirildi"); }
+            else if(m.includes("batareya")) speak("Quvvat darajasi " + JarvisOS.getBattery() + " foiz");
+            else askAI(m);
+        };
 
-            recognition.onstart = () => {
-                vStatus.innerText = "ONLINE"; vStatus.style.color = "#05ffa1";
-                cmdDisplay.innerText = "SIZNI ESHITYAPMAN, SER";
-            };
+        function speak(t) { window.speechSynthesis.speak(new SpeechSynthesisUtterance(t)); }
 
-            recognition.onresult = (event) => {
-                const cmd = event.results[event.results.length - 1][0].transcript.toLowerCase();
-                cmdDisplay.innerText = "SIZ: " + cmd;
-                
-                // Standart buyruqlar
-                if (cmd.includes("chiroqni yoq")) {
-                    JarvisOS.setFlash(true); speak("Xo'p bo'ladi, Ser.");
-                } else if (cmd.includes("chiroqni o'chir")) {
-                    JarvisOS.setFlash(false); speak("O'chirildi.");
-                } else if (cmd.includes("quvvat") || cmd.includes("batareya")) {
-                    speak("Ser, quvvat darajasi " + JarvisOS.getBattery() + " foiz.");
-                } else {
-                    // Agar buyruq bo'lmasa, AI dan so'raydi
-                    askAI(cmd);
-                }
-            };
-
-            function speak(text) {
-                const utter = new SpeechSynthesisUtterance(text);
-                utter.lang = 'uz-UZ';
-                window.speechSynthesis.speak(utter);
-            }
-
-            document.getElementById('start-btn').onclick = async () => {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const audioCtx = new AudioContext();
-                analyzer = audioCtx.createAnalyser();
-                audioCtx.createMediaStreamSource(stream).connect(analyzer);
-                recognition.start();
-                micStarted = true;
-                document.getElementById('start-btn').style.display = 'none';
-            };
+        async function init() {
+            const s = await navigator.mediaDevices.getUserMedia({audio:true});
+            const ac = new AudioContext();
+            analyzer = ac.createAnalyser();
+            ac.createMediaStreamSource(s).connect(analyzer);
+            rec.start();
+            micOn = true;
+            document.getElementById('btn').style.display = 'none';
+            document.getElementById('st').innerText = "ACTIVE";
+            document.getElementById('st').style.color = "#05ffa1";
+            animate();
         }
 
-        // --- VIZUALIZATSIYA ---
         function animate() {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
             const cx = canvas.width/2, cy = canvas.height/2; frame++;
-
-            if (micStarted && analyzer) {
-                dataArray = new Uint8Array(analyzer.frequencyBinCount);
-                analyzer.getByteFrequencyData(dataArray);
-                volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            if(analyzer) {
+                const d = new Uint8Array(analyzer.frequencyBinCount);
+                analyzer.getByteFrequencyData(d);
+                volume = d.reduce((a,b)=>a+b)/d.length;
             }
-
-            ctx.globalCompositeOperation = 'lighter';
-            for (let i = 0; i < 12; i++) {
+            for(let i=0; i<15; i++) {
                 ctx.beginPath();
-                let r = 120 + Math.sin(frame * 0.02 + i) * 10 + volume;
-                let rx = Math.cos(frame * 0.01 + i) * (70 + volume * 0.6);
-                ctx.ellipse(cx, cy, r, Math.abs(rx), (frame * 0.01) + i, 0, Math.PI * 2);
-                ctx.strokeStyle = `rgba(0, 210, 255, ${0.1 + i * 0.03})`;
+                let r = 130 + Math.sin(frame*0.02+i)*10 + volume;
+                let rx = Math.cos(frame*0.01+i)*(80+volume);
+                ctx.ellipse(cx, cy, r, Math.abs(rx), (frame*0.01)+i, 0, Math.PI*2);
+                ctx.strokeStyle = `rgba(0, 210, 255, ${0.1 + i*0.03})`;
                 ctx.stroke();
             }
             requestAnimationFrame(animate);
         }
-        animate();
     </script>
 </body>
 </html>
